@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Branch Prediction Simulator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        canvas {
+            display: block;
+            margin: 20px auto;
+            max-width: 100%;
+            border: 1px solid #ddd;
+            height: 800px; 
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+        .control-group {
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .control-group h3 {
+            margin-top: 0;
+            font-size: 16px;
+        }
+        button {
+            padding: 8px 12px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        select, input {
+            padding: 8px;
+            margin: 5px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        .stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-top: 20px;
+            justify-content: center;
+        }
+        .stat-box {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+            min-width: 150px;
+            text-align: center;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin: 10px 0;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .legend-color {
+            width: 15px;
+            height: 15px;
+            display: inline-block;
+        }
+        .explanation {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e9f7ef;
+            border-radius: 5px;
+            border-left: 5px solid #4CAF50;
+        }
+        .custom-pattern {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Branch Prediction Simulator</h1>
+        
+        <div class="controls">
+            <div class="control-group">
+                <h3>Predictor Type</h3>
+                <select id="predictorType">
+                    <option value="1bit">1-Bit Predictor</option>
+                    <option value="2bit" selected>2-Bit Saturating Counter</option>
+                    <option value="correlating">Correlating Predictor (2-bit, 2-history)</option>
+                    <option value="tournament">Tournament Predictor</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <h3>Branch Pattern</h3>
+                <select id="branchPattern">
+                    <option value="random" selected>Random (70% Taken)</option>
+                    <option value="loop">Loop Pattern (TTTTTN)</option>
+                    <option value="alternating">Alternating (TNTN)</option>
+                    <option value="custom">Custom Pattern</option>
+                </select>
+                <div class="custom-pattern" id="customPatternDiv" style="display: none;">
+                    <input type="text" id="customPattern" placeholder="e.g., TTNTTN" maxlength="20">
+                    <button id="applyPattern">Apply</button>
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <h3>Simulation Controls</h3>
+                <button id="startStop">Pause</button>
+                <button id="step">Step</button>
+                <button id="reset">Reset</button>
+                <select id="speed">
+                    <option value="2000">Slow</option>
+                    <option value="1000">Medium</option>
+                    <option value="500" selected>Fast</option>
+                    <option value="200">Very Fast</option>
+                </select>
+            </div>
+        </div>
+        
+        <canvas id="simulation"></canvas>
+        
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: green;"></div>
+                <span>Correct Prediction</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: red;"></div>
+                <span>Incorrect Prediction</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: blue;"></div>
+                <span>Executing Instruction</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: orange;"></div>
+                <span>Mispredicted Instruction</span>
+            </div>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-box">
+                <h3>Prediction Accuracy</h3>
+                <div id="accuracyStats">0% (0/0)</div>
+            </div>
+            <div class="stat-box">
+                <h3>Current Predictor State</h3>
+                <div id="predictorState">WEAKLY_TAKEN</div>
+            </div>
+            <div class="stat-box">
+                <h3>IPC (Instructions Per Cycle)</h3>
+                <div id="ipcStats">0.00</div>
+            </div>
+            <div class="stat-box">
+                <h3>Total Cycles</h3>
+                <div id="cyclesStats">0</div>
+            </div>
+        </div>
+        
+        <div class="explanation" id="explanation">
+            <h3>How Branch Prediction Works</h3>
+            <p>Branch prediction is a technique used by modern CPUs to guess the outcome of conditional branches before they are executed. This allows the processor to continue executing instructions without waiting for the branch condition to be evaluated.</p>
+            <p>In this simulator:</p>
+            <ul>
+                <li><strong>2-Bit Predictor</strong>: Uses a state machine with 4 states to make predictions based on recent branch history.</li>
+                <li><strong>Pipeline</strong>: Shows instructions moving through the processor pipeline.</li>
+                <li><strong>Mispredictions</strong>: When a prediction is wrong, the pipeline must be flushed, causing a performance penalty.</li>
+            </ul>
+            <p>Try different prediction schemes and branch patterns to see how they affect performance!</p>
+        </div>
+    </div>
+    <script>
+        const canvas = document.getElementById("simulation");
+        const ctx = canvas.getContext("2d");
+        canvas.width = 1150;
+        canvas.height = 650; 
+
+        const predictorStates = {
+            NOT_TAKEN: 0,
+            TAKEN: 1,
+            STRONGLY_NOT_TAKEN: 0,
+            WEAKLY_NOT_TAKEN: 1,
+            WEAKLY_TAKEN: 2,
+            STRONGLY_TAKEN: 3
+        };
+
+        let branchHistory = [];
+        let predictor = predictorStates.WEAKLY_TAKEN;
+        let correctPredictions = 0;
+        let totalBranches = 0;
+        let totalCycles = 0;
+        let executedInstructions = 0;
+        let running = true;
+        let simulationSpeed = 500;
+        let customPatternIndex = 0;
+        let globalHistory = 0; 
+        let correlatingTable = [1, 1, 1, 1]; 
+        let globalPredictor = 1;
+        let localPredictor = 1;
+        let choicePredictor = 1;
+
+        let pipeline = [];
+        const PIPELINE_STAGES = 5;
+        const MISPREDICTION_PENALTY = 3;
+
+        let currentPattern = "random";
+        let customPattern = "TTNTTN";
+
+        document.getElementById("branchPattern").addEventListener("change", function() {
+            currentPattern = this.value;
+            if (currentPattern === "custom") {
+                document.getElementById("customPatternDiv").style.display = "flex";
+            } else {
+                document.getElementById("customPatternDiv").style.display = "none";
+            }
+            resetSimulation();
+        });
+
+        document.getElementById("predictorType").addEventListener("change", function() {
+            resetSimulation();
+            updateExplanation();
+        });
+
+        document.getElementById("applyPattern").addEventListener("click", function() {
+            customPattern = document.getElementById("customPattern").value.toUpperCase();
+            customPatternIndex = 0;
+            resetSimulation();
+        });
+
+        document.getElementById("startStop").addEventListener("click", function() {
+            running = !running;
+            this.textContent = running ? "Pause" : "Resume";
+            if (running) runSimulation();
+        });
+
+        document.getElementById("step").addEventListener("click", function() {
+            if (!running) {
+                simulationStep();
+            }
+        });
+
+        document.getElementById("reset").addEventListener("click", resetSimulation);
+
+        document.getElementById("speed").addEventListener("change", function() {
+            simulationSpeed = parseInt(this.value);
+        });
+
+        function resetSimulation() {
+            branchHistory = [];
+            predictor = predictorStates.WEAKLY_TAKEN;
+            correctPredictions = 0;
+            totalBranches = 0;
+            totalCycles = 0;
+            executedInstructions = 0;
+            pipeline = [];
+            customPatternIndex = 0;
+            globalHistory = 0;
+            correlatingTable = [1, 1, 1, 1];
+            globalPredictor = 1;
+            localPredictor = 1;
+            choicePredictor = 1;
+            draw();
+        }
+
+        function updateExplanation() {
+            const predictorType = document.getElementById("predictorType").value;
+            let explanation = "";
+            
+            switch(predictorType) {
+                case "1bit":
+                    explanation = "<h3>1-Bit Predictor</h3><p>The simplest form of branch prediction. It remembers only the last outcome of a branch and predicts the same outcome for the next time. This works well for branches that consistently go one way but performs poorly on alternating patterns.</p>";
+                    break;
+                case "2bit":
+                    explanation = "<h3>2-Bit Saturating Counter</h3><p>Uses 4 states (Strongly Not Taken, Weakly Not Taken, Weakly Taken, Strongly Taken) to make predictions. This requires two consecutive mispredictions to change the prediction direction, making it more resistant to occasional deviations in branch behavior.</p>";
+                    break;
+                case "correlating":
+                    explanation = "<h3>Correlating Predictor</h3><p>Uses the history of recent branches to make predictions. This implementation uses 2 bits of global history to select one of 4 different 2-bit predictors. This works well for branches whose outcome depends on the outcome of recent branches.</p>";
+                    break;
+                case "tournament":
+                    explanation = "<h3>Tournament Predictor</h3><p>Combines multiple predictors (in this case, a global and a local predictor) and uses a 'choice predictor' to decide which one to trust for each branch. This adapts to different branch patterns by selecting the most accurate predictor for each situation.</p>";
+                    break;
+            }
+            
+            document.getElementById("explanation").innerHTML = explanation;
+        }
+
+        function actualBranchOutcome() {
+            switch(currentPattern) {
+                case "random":
+                    return Math.random() < 0.7;
+                case "loop":
+                    return totalBranches % 6 !== 5;
+                case "alternating":
+                    return totalBranches % 2 === 0;
+                case "custom":
+                    const result = customPattern[customPatternIndex] === 'T';
+                    customPatternIndex = (customPatternIndex + 1) % customPattern.length;
+                    return result;
+                default:
+                    return Math.random() < 0.5;
+            }
+        }
+
+        function makePrediction() {
+            const predictorType = document.getElementById("predictorType").value;
+            
+            switch(predictorType) {
+                case "1bit":
+                    return predictor === predictorStates.TAKEN;
+                case "2bit":
+                    return predictor >= predictorStates.WEAKLY_TAKEN;
+                case "correlating":
+                    return correlatingTable[globalHistory] >= 2;
+                case "tournament":
+                    if (choicePredictor >= 2) {
+                        return localPredictor >= 2;
+                    } else {
+                        return globalPredictor >= 2;
+                    }
+                default:
+                    return predictor >= predictorStates.WEAKLY_TAKEN;
+            }
+        }
+
+        function updatePredictor(actual) {
+            const predictorType = document.getElementById("predictorType").value;
+            
+            switch(predictorType) {
+                case "1bit":
+                    predictor = actual ? predictorStates.TAKEN : predictorStates.NOT_TAKEN;
+                    break;
+                    
+                case "2bit":
+                    if (actual) {
+                        if (predictor < predictorStates.STRONGLY_TAKEN) {
+                            predictor++;
+                        }
+                    } else {
+                        if (predictor > predictorStates.STRONGLY_NOT_TAKEN) {
+                            predictor--;
+                        }
+                    }
+                    break;
+                    
+                case "correlating":
+                    if (actual) {
+                        if (correlatingTable[globalHistory] < 3) {
+                            correlatingTable[globalHistory]++;
+                        }
+                    } else {
+                        if (correlatingTable[globalHistory] > 0) {
+                            correlatingTable[globalHistory]--;
+                        }
+                    }
+                    
+                    globalHistory = ((globalHistory << 1) & 0x3) | (actual ? 1 : 0);
+                    break;
+                    
+                case "tournament":
+                    if (actual) {
+                        if (globalPredictor < 3) globalPredictor++;
+                    } else {
+                        if (globalPredictor > 0) globalPredictor--;
+                    }
+                    
+                    if (actual) {
+                        if (localPredictor < 3) localPredictor++;
+                    } else {
+                        if (localPredictor > 0) localPredictor--;
+                    }
+                    
+                    const globalCorrect = (globalPredictor >= 2) === actual;
+                    const localCorrect = (localPredictor >= 2) === actual;
+                    
+                    if (globalCorrect && !localCorrect) {
+                        if (choicePredictor > 0) choicePredictor--;
+                    } else if (!globalCorrect && localCorrect) {
+                        if (choicePredictor < 3) choicePredictor++;
+                    }
+                    break;
+            }
+        }
+
+        function getPredictorStateText() {
+            const predictorType = document.getElementById("predictorType").value;
+            
+            switch(predictorType) {
+                case "1bit":
+                    return predictor === predictorStates.TAKEN ? "TAKEN" : "NOT_TAKEN";
+                case "2bit":
+                    const states = ["STRONGLY_NOT_TAKEN", "WEAKLY_NOT_TAKEN", "WEAKLY_TAKEN", "STRONGLY_TAKEN"];
+                    return states[predictor];
+                case "correlating":
+                    return `History: ${globalHistory.toString(2).padStart(2, '0')}, Counter: ${correlatingTable[globalHistory]}`;
+                case "tournament":
+                    return `G:${globalPredictor} L:${localPredictor} C:${choicePredictor}`;
+                default:
+                    return "UNKNOWN";
+            }
+        }
+
+        function simulationStep() {
+            const actual = actualBranchOutcome();
+            const prediction = makePrediction();
+            totalBranches++;
+            if (prediction === actual) {
+                correctPredictions++;
+                totalCycles++;
+                executedInstructions++;
+            } else {
+                pipeline = [];
+                totalCycles += MISPREDICTION_PENALTY;
+                executedInstructions++;
+            }
+            updatePredictor(actual);
+            branchHistory.push({ prediction, actual });
+            if (branchHistory.length > 10) branchHistory.shift();
+            if (pipeline.length < PIPELINE_STAGES) {
+                pipeline.push({ prediction, actual });
+            } else {
+                pipeline.shift();
+                pipeline.push({ prediction, actual });
+            }
+            document.getElementById("accuracyStats").textContent = 
+                `${Math.round((correctPredictions / totalBranches) * 100)}% (${correctPredictions}/${totalBranches})`;
+            document.getElementById("predictorState").textContent = getPredictorStateText();
+            document.getElementById("ipcStats").textContent = (executedInstructions / totalCycles).toFixed(2);
+            document.getElementById("cyclesStats").textContent = totalCycles;
+            draw();
+        }
+
+        function runSimulation() {
+            if (!running) return;
+            
+            simulationStep();
+            setTimeout(runSimulation, simulationSpeed);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.font = "16px Arial";
+            ctx.fillStyle = "#333";
+            
+            const margin = 30;
+            const leftColumnX = margin;
+            const rightColumnX = canvas.width / 2 + margin;
+            
+            let leftY = margin;
+            let rightY = margin;
+            
+            const historyTitle = "Branch History (newest on left):";
+            ctx.fillText(historyTitle, leftColumnX, leftY);
+            leftY += 30;
+            
+            const historySpacing = 40;
+            const historyWidth = Math.min(branchHistory.length * historySpacing + 20, canvas.width / 2 - margin * 2);
+            const historyHeight = 100;
+            
+            ctx.fillStyle = "#f9f9f9";
+            ctx.fillRect(leftColumnX, leftY, historyWidth, historyHeight);
+            ctx.strokeStyle = "#ddd";
+            ctx.strokeRect(leftColumnX, leftY, historyWidth, historyHeight);
+            
+            branchHistory.forEach((entry, index) => {
+                const x = leftColumnX + 10 + (branchHistory.length - index - 1) * historySpacing;
+                
+                ctx.fillStyle = entry.actual ? "#4CAF50" : "#F44336";
+                ctx.fillText(entry.actual ? "T" : "N", x + 7, leftY + 25);
+                
+                let color = entry.prediction === entry.actual ? "green" : "red";
+                ctx.fillStyle = color;
+                ctx.fillRect(x, leftY + 40, 25, 25);
+                
+                ctx.fillStyle = "#666";
+                ctx.fillText(branchHistory.length - index, x + 5, leftY + 85);
+            });
+            
+            leftY += historyHeight + margin;
+            
+            ctx.fillStyle = "#333";
+            ctx.fillText("Pipeline Execution:", rightColumnX, rightY);
+            rightY += 30;
+            
+            const stageWidth = 90;
+            const stageSpacing = 110;
+            const stageHeight = 60;
+            const stageNames = ["Fetch", "Decode", "Execute", "Memory", "Writeback"];
+            
+            const pipelineWidth = stageNames.length * stageSpacing - (stageSpacing - stageWidth);
+            
+            ctx.fillStyle = "#f9f9f9";
+            ctx.fillRect(rightColumnX, rightY, pipelineWidth, stageHeight + 30);
+            ctx.strokeStyle = "#ddd";
+            ctx.strokeRect(rightColumnX, rightY, pipelineWidth, stageHeight + 30);
+            
+            stageNames.forEach((name, i) => {
+                const stageX = rightColumnX + i * stageSpacing;
+                
+                ctx.fillStyle = "#333";
+                ctx.fillText(name, stageX + 5, rightY + 20);
+                
+                ctx.strokeStyle = "#ddd";
+                ctx.strokeRect(stageX, rightY + 30, stageWidth, 40);
+                
+                if (i < pipeline.length) {
+                    const entry = pipeline[i];
+                    let color = entry.prediction === entry.actual ? "blue" : "orange";
+                    ctx.fillStyle = color;
+                    ctx.fillRect(stageX + 1, rightY + 31, stageWidth - 2, 38);
+                    
+                    ctx.fillStyle = "white";
+                    ctx.fillText(entry.actual ? "T" : "N", stageX + stageWidth/2 - 5, rightY + 55);
+                }
+            });
+            
+            rightY += stageHeight + 30 + margin;
+            
+            const predictorType = document.getElementById("predictorType").value;
+            
+            if (predictorType === "2bit") {
+                const stateMachineHeight = 230;
+                draw2BitStateMachine(leftColumnX, leftY, predictor);
+                leftY += stateMachineHeight + margin;
+            } else if (predictorType === "1bit") {
+                const stateMachineHeight = 180;
+                draw1BitStateMachine(leftColumnX, leftY, predictor);
+                leftY += stateMachineHeight + margin;
+            } else if (predictorType === "correlating") {
+                const correlatingHeight = 250;
+                drawCorrelatingPredictor(leftColumnX, leftY);
+                leftY += correlatingHeight + margin;
+            } else if (predictorType === "tournament") {
+                const tournamentHeight = 250;
+                drawTournamentPredictor(leftColumnX, leftY);
+                leftY += tournamentHeight + margin;
+            }
+            
+            if (branchHistory.length > 0) {
+                const graphHeight = 300;
+                drawPerformanceGraph(rightColumnX, rightY, pipelineWidth, graphHeight);
+                rightY += graphHeight + margin;
+            }
+        }
+
+        function draw2BitStateMachine(x, y, currentState) {
+            ctx.fillStyle = "#333";
+            ctx.fillText("2-Bit Predictor State Machine:", x, y);
+            y += 30;
+            
+            const stateRadius = 30;
+            const stateSpacing = 110;
+            
+            const width = stateSpacing * 4 + stateRadius;
+            const height = 200;
+            
+            ctx.fillStyle = "#f9f9f9";
+            ctx.fillRect(x, y, width, height);
+            ctx.strokeStyle = "#ddd";
+            ctx.strokeRect(x, y, width, height);
+            
+            const states = [
+                { name: "SNT", x: x + stateRadius + stateSpacing * 0, y: y + stateRadius + 30 },
+                { name: "WNT", x: x + stateRadius + stateSpacing * 1, y: y + stateRadius + 30 },
+                { name: "WT", x: x + stateRadius + stateSpacing * 2, y: y + stateRadius + 30 },
+                { name: "ST", x: x + stateRadius + stateSpacing * 3, y: y + stateRadius + 30 }
+            ];
+            
+            states.forEach((state, i) => {
+                ctx.beginPath();
+                ctx.arc(state.x, state.y, stateRadius, 0, Math.PI * 2);
+                ctx.fillStyle = i === currentState ? "#4CAF50" : "#ffffff";
+                ctx.fill();
+                ctx.strokeStyle = "#333";
+                ctx.stroke();
+                ctx.fillStyle = i === currentState ? "white" : "#333";
+                ctx.fillText(state.name, state.x - 15, state.y + 5);
+            });
+            
+            drawArrow(states[0].x + stateRadius, states[0].y, states[1].x - stateRadius, states[1].y, "T");
+            drawArrow(states[1].x + stateRadius, states[1].y, states[2].x - stateRadius, states[2].y, "T");
+            drawArrow(states[2].x + stateRadius, states[2].y, states[3].x - stateRadius, states[3].y, "T");
+            drawArrow(states[3].x, states[3].y - stateRadius, states[3].x, states[3].y - stateRadius - 20, "T");
+            drawArrow(states[3].x - stateRadius, states[3].y - 15, states[2].x + stateRadius, states[2].y - 15, "N");
+            drawArrow(states[2].x - stateRadius, states[2].y - 15, states[1].x + stateRadius, states[1].y - 15, "N");
+            drawArrow(states[1].x - stateRadius, states[1].y - 15, states[0].x + stateRadius, states[0].y - 15, "N");
+            drawArrow(states[0].x, states[0].y - stateRadius, states[0].x, states[0].y - stateRadius - 20, "N");
+            
+            const legendY = y + 110;
+            const legendSpacing = 20;
+            ctx.fillStyle = "#333";
+            ctx.fillText("SNT = Strongly Not Taken", x + 10, legendY);
+            ctx.fillText("WNT = Weakly Not Taken", x + 10, legendY + legendSpacing);
+            ctx.fillText("WT = Weakly Taken", x + 10, legendY + legendSpacing * 2);
+            ctx.fillText("ST = Strongly Taken", x + 10, legendY + legendSpacing * 3);
+            ctx.fillText("T = Taken branch, N = Not Taken branch", x + 10, legendY + legendSpacing * 4);
+        }
+
+        function draw1BitStateMachine(x, y, currentState) {
+            ctx.fillStyle = "#333";
+            ctx.fillText("1-Bit Predictor State Machine:", x, y);
+            y += 30;
+            
+            const stateRadius = 30;
+            const stateSpacing = 180;
+            
+            const width = stateSpacing + stateRadius * 2 + 20;
+            const height = 150;
+            
+            ctx.fillStyle = "#f9f9f9";
+            ctx.fillRect(x, y, width, height);
+            ctx.strokeStyle = "#ddd";
+            ctx.strokeRect(x, y, width, height);
+            
+            const states = [
+                { name: "NT", x: x + stateRadius + stateSpacing * 0, y: y + stateRadius + 30 },
+                { name: "T", x: x + stateRadius + stateSpacing * 1, y: y + stateRadius + 30 }
+            ];
+            
+            states.forEach((state, i) => {
+                ctx.beginPath();
+                ctx.arc(state.x, state.y, stateRadius, 0, Math.PI * 2);
+                ctx.fillStyle = i === currentState ? "#4CAF50" : "#ffffff";
+                ctx.fill();
+                ctx.strokeStyle = "#333";
+                ctx.stroke();
+                ctx.fillStyle = i === currentState ? "white" : "#333";
+                ctx.fillText(state.name, state.x - 10, state.y + 5);
+            });
+            
+            drawArrow(states[0].x + stateRadius, states[0].y, states[1].x - stateRadius, states[1].y, "T");
+            drawArrow(states[1].x - stateRadius, states[1].y - 25, states[0].x + stateRadius, states[0].y - 25, "N");
+            
+            const legendY = y + 110;
+            const legendSpacing = 20;
+            ctx.fillStyle = "#333";
+            ctx.fillText("NT = Not Taken", x + 10, legendY);
+            ctx.fillText("T = Taken", x + 10, legendY + legendSpacing);
+        }
+
+        function drawCorrelatingPredictor(x, y) {
+            ctx.fillStyle = "#333";
+            ctx.fillText("Correlating Predictor (2-bit history):", x, y);
+            y += 30;
+            
+            const width = 300;
+            const height = 220;
+            
+            ctx.fillStyle = "#f9f9f9";
+            ctx.fillRect(x, y, width, height);
+            ctx.strokeStyle = "#ddd";
+            ctx.strokeRect(x, y, width, height);
+            
+            ctx.strokeStyle = "#333";
+            ctx.strokeRect(x + 10, y + 10, 80, 30);
+            ctx.fillStyle = "#333";
+            ctx.fillText("History", x + 20, y + 30);
+            
+            ctx.fillText(globalHistory.toString(2).padStart(2, '0'), x + 100, y + 30);
+            
+            const tableY = y + 60;
+            ctx.fillText("Predictor Table:", x + 10, tableY);
+            
+            for (let i = 0; i < 4; i++) {
+                const historyStr = i.toString(2).padStart(2, '0');
+                const counterValue = correlatingTable[i];
+                const prediction = counterValue >= 2 ? "T" : "N";
+                
+                const rowY = tableY + 20 + i * 35;
+                ctx.strokeRect(x + 10, rowY, 280, 30);
+                ctx.fillStyle = i === globalHistory ? "#e0f7fa" : "white";
+                ctx.fillRect(x + 11, rowY + 1, 278, 28);
+                
+                ctx.fillStyle = "#333";
+                ctx.fillText(`History ${historyStr}: Counter = ${counterValue} → ${prediction}`, x + 20, rowY + 20);
+            }
+        }
+
+        function drawTournamentPredictor(x, y) {
+            ctx.fillStyle = "#333";
+            ctx.fillText("Tournament Predictor:", x, y);
+            y += 30;
+            
+            const width = 300;
+            const height = 220;
+            
+            ctx.fillStyle = "#f9f9f9";
+            ctx.fillRect(x, y, width, height);
+            ctx.strokeStyle = "#ddd";
+            ctx.strokeRect(x, y, width, height);
+            
+            const boxWidth = 120;
+            const boxHeight = 30;
+            const boxSpacing = 15;
+            
+            ctx.strokeStyle = "#333";
+            ctx.strokeRect(x + 10, y + 10, boxWidth, boxHeight);
+            ctx.fillStyle = "#333";
+            ctx.fillText("Global: " + globalPredictor, x + 20, y + 30);
+            
+            ctx.strokeRect(x + 10, y + 10 + boxHeight + boxSpacing, boxWidth, boxHeight);
+            ctx.fillText("Local: " + localPredictor, x + 20, y + 30 + boxHeight + boxSpacing);
+            
+            ctx.strokeRect(x + 10, y + 10 + (boxHeight + boxSpacing) * 2, boxWidth, boxHeight);
+            ctx.fillText("Choice: " + choicePredictor, x + 20, y + 30 + (boxHeight + boxSpacing) * 2);
+            
+            const prediction = choicePredictor >= 2 ? 
+                (localPredictor >= 2 ? "T" : "N") : 
+                (globalPredictor >= 2 ? "T" : "N");
+            
+            ctx.fillStyle = "#4CAF50";
+            ctx.fillRect(x + 10, y + 10 + (boxHeight + boxSpacing) * 3, boxWidth, boxHeight);
+            ctx.fillStyle = "white";
+            ctx.fillText("Predict: " + prediction, x + 20, y + 30 + (boxHeight + boxSpacing) * 3);
+            
+            ctx.fillStyle = "#333";
+            ctx.fillText("Choice ≥ 2: Use Local", x + 140, y + 30);
+            ctx.fillText("Choice < 2: Use Global", x + 140, y + 55);
+            
+            ctx.fillText("Global: Pattern-based", x + 140, y + 90);
+            ctx.fillText("Local: Last branch-based", x + 140, y + 115);
+            ctx.fillText("Values 0-1: Predict N", x + 140, y + 150);
+            ctx.fillText("Values 2-3: Predict T", x + 140, y + 175);
+        }
+
+        function drawArrow(fromX, fromY, toX, toY, label) {
+            const headLength = 10;
+            const angle = Math.atan2(toY - fromY, toX - fromX);
+            
+            ctx.beginPath();
+            ctx.moveTo(fromX, fromY);
+            ctx.lineTo(toX, toY);
+            ctx.lineTo(toX - headLength * Math.cos(angle - Math.PI / 6), toY - headLength * Math.sin(angle - Math.PI / 6));
+            ctx.moveTo(toX, toY);
+            ctx.lineTo(toX - headLength * Math.cos(angle + Math.PI / 6), toY - headLength * Math.sin(angle + Math.PI / 6));
+            
+            ctx.strokeStyle = "#666";
+            ctx.stroke();
+            
+            if (label) {
+                const midX = (fromX + toX) / 2;
+                const midY = (fromY + toY) / 2;
+                
+                ctx.fillStyle = "white";
+                const labelWidth = ctx.measureText(label).width + 6;
+                ctx.fillRect(midX - labelWidth/2, midY - 15, labelWidth, 20);
+                
+                ctx.fillStyle = "#F44336";
+                ctx.fillText(label, midX - labelWidth/2 + 3, midY);
+            }
+        }
+
+        function drawPerformanceGraph(x, y, width, height) {
+            ctx.fillStyle = "#333";
+            ctx.fillText("Performance Metrics:", x, y);
+            y += 30;
+            
+            ctx.fillStyle = "#f9f9f9";
+            ctx.fillRect(x, y, width, height);
+            ctx.strokeStyle = "#ddd";
+            ctx.strokeRect(x, y, width, height);
+            
+            const graphPadding = 40;
+            const graphX = x + graphPadding;
+            const graphY = y + 20;
+            const graphWidth = width - graphPadding * 2;
+            const graphHeight = height - graphPadding - 20;
+            
+            ctx.beginPath();
+            ctx.moveTo(graphX, graphY);
+            ctx.lineTo(graphX, graphY + graphHeight);
+            ctx.lineTo(graphX + graphWidth, graphY + graphHeight);
+            ctx.strokeStyle = "#333";
+            ctx.stroke();
+            
+            ctx.fillStyle = "#333";
+            ctx.fillText("Time (branches)", x + width/2 - 50, y + height - 15);
+            ctx.save();
+            ctx.translate(x - 5, y + height/2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText("Accuracy", 0, 0);
+            ctx.restore();
+            
+            ctx.strokeStyle = "#ddd";
+            for (let i = 0; i <= 10; i++) {
+                const gridY = graphY + graphHeight - (i / 10) * graphHeight;
+                ctx.beginPath();
+                ctx.moveTo(graphX, gridY);
+                ctx.lineTo(graphX + graphWidth, gridY);
+                ctx.stroke();
+                ctx.fillStyle = "#666";
+                ctx.fillText((i * 10) + "%", graphX - 35, gridY + 5);
+            }
+            
+            for (let i = 0; i <= 10; i++) {
+                const gridX = graphX + (i / 10) * graphWidth;
+                ctx.beginPath();
+                ctx.moveTo(gridX, graphY);
+                ctx.lineTo(gridX, graphY + graphHeight);
+                ctx.stroke();
+            }
+            
+            if (branchHistory.length > 1) {
+                let runningCorrect = 0;
+                
+                ctx.beginPath();
+                ctx.moveTo(graphX, graphY + graphHeight);
+                
+                branchHistory.forEach((entry, i) => {
+                    if (entry.prediction === entry.actual) runningCorrect++;
+                    const accuracy = runningCorrect / (i + 1);
+                    const pointX = graphX + (i / (branchHistory.length - 1)) * graphWidth;
+                    const pointY = graphY + graphHeight - (accuracy * graphHeight);
+                    
+                    ctx.lineTo(pointX, pointY);
+                });
+                
+                ctx.strokeStyle = "#4CAF50";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.lineWidth = 1;
+                
+                runningCorrect = 0;
+                
+                branchHistory.forEach((entry, i) => {
+                    if (entry.prediction === entry.actual) runningCorrect++;
+                    const accuracy = runningCorrect / (i + 1);
+                    const pointX = graphX + (i / (branchHistory.length - 1)) * graphWidth;
+                    const pointY = graphY + graphHeight - (accuracy * graphHeight);
+                    
+                    ctx.beginPath();
+                    ctx.arc(pointX, pointY, 3, 0, Math.PI * 2);
+                    ctx.fillStyle = "#4CAF50";
+                    ctx.fill();
+                    
+                    if (i === branchHistory.length - 1 || i === 0 || i % 5 === 0) {
+                        ctx.fillStyle = "#333";
+                        ctx.fillText(Math.round(accuracy * 100) + "%", pointX + 5, pointY - 5);
+                    }
+                });
+            }
+            
+            if (branchHistory.length > 1 && totalCycles > 0) {
+                ctx.strokeStyle = "#2196F3";
+                ctx.setLineDash([5, 3]);
+                
+                const ipc = executedInstructions / totalCycles;
+                const ipcY = graphY + graphHeight - (ipc * graphHeight);
+                
+                ctx.beginPath();
+                ctx.moveTo(graphX, ipcY);
+                ctx.lineTo(graphX + graphWidth, ipcY);
+                ctx.stroke();
+                
+                ctx.setLineDash([]);
+                
+                ctx.fillStyle = "#2196F3";
+                ctx.fillText("IPC: " + ipc.toFixed(2), graphX + graphWidth - 80, ipcY - 10);
+            }
+        }
+
+        updateExplanation();
+        draw();
+        runSimulation();
+    </script>
+</body>
+</html>
